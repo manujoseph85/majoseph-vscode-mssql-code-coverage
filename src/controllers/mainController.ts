@@ -1025,7 +1025,9 @@ export default class MainController implements vscode.Disposable {
             if (profileChanged) {
                 // Log sanitization metrics for diagnostics
                 if (tokensRemoved > 0 || passwordsCleared > 0) {
-                    Utils.logDebug(`Sanitized ${tokensRemoved} tokens and ${passwordsCleared} passwords`);
+                    Utils.logDebug(
+                        `Sanitized ${tokensRemoved} tokens and ${passwordsCleared} passwords`,
+                    );
                 }
                 await this._vscodeWrapper.setConfiguration(
                     Constants.extensionName,
