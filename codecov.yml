@@ -12,4 +12,3 @@ comment:
 parsers:
   cobertura:
     partials_as_hits: true
-    handle_missing_conditons: true
