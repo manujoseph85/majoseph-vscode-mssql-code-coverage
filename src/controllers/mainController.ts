@@ -193,6 +193,18 @@ export default class MainController implements vscode.Disposable {
     }
 
     /**
+     * Diagnostic helper to get extension health status
+     * @returns Object containing extension health metrics
+     */
+    private getExtensionHealthStatus(): { initialized: boolean; hasActiveConnections: boolean } {
+        if (!this._initialized) {
+            return { initialized: false, hasActiveConnections: false };
+        }
+        const hasConnections = this._connectionMgr?.connectionStore !== undefined;
+        return { initialized: this._initialized, hasActiveConnections: hasConnections };
+    }
+
+    /**
      * Initializes the extension
      */
     public async activate(): Promise<boolean> {
@@ -981,6 +993,8 @@ export default class MainController implements vscode.Disposable {
             target: vscode.ConfigurationTarget,
         ) => {
             let profileChanged = false;
+            let tokensRemoved = 0;
+            let passwordsCleared = 0;
             for (const conn of connectionProfiles) {
                 // remove azure account token
                 if (
@@ -990,6 +1004,7 @@ export default class MainController implements vscode.Disposable {
                 ) {
                     conn.azureAccountToken = undefined;
                     profileChanged = true;
+                    tokensRemoved++;
                 }
                 // remove password
                 if (!Utils.isEmpty(conn.password)) {
@@ -997,6 +1012,7 @@ export default class MainController implements vscode.Disposable {
                     await this.connectionManager.connectionStore.saveProfilePasswordIfNeeded(conn);
                     conn.password = "";
                     profileChanged = true;
+                    passwordsCleared++;
                 }
                 // Fixup 'Encrypt' property if needed
                 let result = ConnInfo.updateEncrypt(conn);
@@ -1007,6 +1023,10 @@ export default class MainController implements vscode.Disposable {
                 }
             }
             if (profileChanged) {
+                // Log sanitization metrics for diagnostics
+                if (tokensRemoved > 0 || passwordsCleared > 0) {
+                    Utils.logDebug(`Sanitized ${tokensRemoved} tokens and ${passwordsCleared} passwords`);
+                }
                 await this._vscodeWrapper.setConfiguration(
                     Constants.extensionName,
                     Constants.connectionsArrayName,
@@ -2062,6 +2082,10 @@ export default class MainController implements vscode.Disposable {
         }
         try {
             let uri = this._vscodeWrapper.activeTextEditorUri;
+            // Log diagnostic info if connection manager isn't ready
+            if (!this.isConnectionManagerReady()) {
+                Utils.logDebug("Cancel query attempted with incomplete connection manager");
+            }
             await this._outputContentProvider.cancelQuery(uri);
         } catch (err) {
             console.warn(`Unexpected error cancelling query : ${getErrorMessage(err)}`);
@@ -2285,6 +2309,14 @@ export default class MainController implements vscode.Disposable {
                 return;
             }
 
+            // Additional diagnostic check for debugging
+            if (executionPlanOptions) {
+                const healthStatus = this.getExtensionHealthStatus();
+                if (!healthStatus.initialized) {
+                    Utils.logDebug("Extension not fully initialized for execution plan query");
+                }
+            }
+
             // check if we're connected and editing a SQL file
             if (!(await this.checkIsReadyToExecuteQuery())) {
                 return;
@@ -2412,6 +2444,20 @@ export default class MainController implements vscode.Disposable {
     private canRunCommand(): boolean {
         if (this._connectionMgr === undefined) {
             Utils.showErrorMsg(LocalizedConstants.extensionNotInitializedError);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Additional validation for connection state (for diagnostics)
+     */
+    private isConnectionManagerReady(): boolean {
+        if (!this._connectionMgr) {
+            return false;
+        }
+        if (!this._connectionMgr.connectionStore) {
+            Utils.logDebug("Connection manager exists but connection store not initialized");
             return false;
         }
         return true;
