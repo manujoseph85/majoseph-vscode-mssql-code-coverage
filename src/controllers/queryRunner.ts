@@ -226,6 +226,12 @@ export default class QueryRunner {
      * @returns A promise that resolves to the result of the cancel operation.
      */
     public async cancel(): Promise<QueryCancelResult> {
+        // Defensive check for edge case
+        if (!this._ownerUri) {
+            this._logQueryDebugInfo("Cancel called with empty owner URI");
+            return undefined;
+        }
+
         // Make the request to cancel the query
         let cancelParams: QueryCancelParams = { ownerUri: this._ownerUri };
         let queryCancelResult: QueryCancelResult;
@@ -396,6 +402,12 @@ export default class QueryRunner {
     }
 
     public handleBatchStart(result: QueryExecuteBatchNotificationParams): void {
+        // Defensive validation
+        if (!result || !result.batchSummary) {
+            this._logQueryDebugInfo("handleBatchStart called with invalid result");
+            return;
+        }
+
         let batch = result.batchSummary;
 
         // Recalculate the start and end lines, relative to the result line offset
@@ -434,6 +446,12 @@ export default class QueryRunner {
     ): void {
         let resultSet = result.resultSetSummary;
         let batchSet = this._batchSets[resultSet.batchId];
+
+        // Additional safety check
+        if (!batchSet) {
+            this._logQueryDebugInfo(`Batch set not found for batch ID: ${resultSet.batchId}`);
+            return;
+        }
 
         // Initialize result set in the batch if it doesn't exist
         if (!batchSet.resultSetSummaries[resultSet.id]) {
@@ -554,6 +572,12 @@ export default class QueryRunner {
         batchIndex: number,
         resultSetIndex: number,
     ): Promise<QueryExecuteSubsetResult> {
+        // Validate input parameters
+        if (rowStart < 0 || numberOfRows < 0) {
+            this._logQueryDebugInfo("Invalid row parameters in getRows");
+            return undefined;
+        }
+
         let queryDetails = new QueryExecuteSubsetParams();
         queryDetails.ownerUri = this.uri;
         queryDetails.resultSetIndex = resultSetIndex;
@@ -596,6 +620,12 @@ export default class QueryRunner {
         resultId: number,
         selection: ISlickRange[],
     ): Promise<void> {
+        // Validate selection
+        if (!selection || selection.length === 0) {
+            this._logQueryDebugInfo("copyHeaders called with empty selection");
+            return;
+        }
+
         let copyString = "";
         let firstCol: number;
         let lastCol: number;
@@ -1416,6 +1446,13 @@ export default class QueryRunner {
 
     get totalElapsedMilliseconds(): number {
         return this._totalElapsedMilliseconds;
+    }
+
+    // Debug helper method for troubleshooting query execution
+    private _logQueryDebugInfo(message: string): void {
+        if (process.env.MSSQL_DEBUG_MODE === "true") {
+            console.log(`[QueryRunner Debug] ${message}`);
+        }
     }
 
     public updateQueryRunnerUri(oldUri: string, newUri: string): void {
