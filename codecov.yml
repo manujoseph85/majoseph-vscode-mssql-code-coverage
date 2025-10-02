@@ -2,7 +2,7 @@ coverage:
   status:
     project: #code coverage requirements for the entire project
       default:
-        target: 50% #the required coverage value
+        target: 60% #the required coverage value
     patch: # code coverage requirements for the changes in the commit
       default:
         target: 70% #the required coverage value
