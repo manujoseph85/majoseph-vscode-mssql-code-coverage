@@ -76,10 +76,16 @@ export interface SummaryChanged extends SelectionSummary {
     uri: string;
 }
 
+// Constants for editor configuration
+const FILES_CONFIG_SECTION = "files";
+const EOL_CONFIG_KEY = "eol";
+const AUTO_EOL_VALUE = "auto";
+
 export const editorEol =
-    vscode.workspace.getConfiguration("files").get<string>("eol") === "auto"
+    vscode.workspace.getConfiguration(FILES_CONFIG_SECTION).get<string>(EOL_CONFIG_KEY) ===
+    AUTO_EOL_VALUE
         ? os.EOL
-        : vscode.workspace.getConfiguration("files").get<string>("eol");
+        : vscode.workspace.getConfiguration(FILES_CONFIG_SECTION).get<string>(EOL_CONFIG_KEY);
 
 /*
  * Query Runner class which handles running a query, reports the results to the content manager,
@@ -88,14 +94,14 @@ export const editorEol =
 export default class QueryRunner {
     private _batchSets: BatchSummary[] = [];
     private _batchSetMessages: { [batchId: number]: IResultMessage[] } = {};
-    private _isExecuting: boolean;
-    private _resultLineOffset: number;
-    private _totalElapsedMilliseconds: number;
-    private _hasCompleted: boolean;
+    private _isExecuting: boolean = false;
+    private _resultLineOffset: number = 0;
+    private _totalElapsedMilliseconds: number = 0;
+    private _hasCompleted: boolean = false;
     private _isSqlCmd: boolean = false;
     private _uriToQueryPromiseMap = new Map<string, Deferred<boolean>>();
     private _uriToQueryStringMap = new Map<string, string>();
-    private static _runningQueries = [];
+    private static _runningQueries: string[] = [];
 
     private _startFailedEmitter: vscode.EventEmitter<string> = new vscode.EventEmitter<string>();
     public onStartFailed: vscode.Event<string> = this._startFailedEmitter.event;
@@ -163,10 +169,7 @@ export default class QueryRunner {
             this._vscodeWrapper = new VscodeWrapper();
         }
 
-        // Store the state
-        this._isExecuting = false;
-        this._totalElapsedMilliseconds = 0;
-        this._hasCompleted = false;
+        // Note: Initial state is already set via field initializers
     }
 
     // PROPERTIES //////////////////////////////////////////////////////////
@@ -342,7 +345,7 @@ export default class QueryRunner {
             LocalizedConstants.msgStartedExecute(this._ownerUri),
         );
         // Store the line offset for the query text
-        this._resultLineOffset = selection ? selection.startLine : 0;
+        this._resultLineOffset = this.getSelectionStartLine(selection);
         this._isExecuting = true;
         this._totalElapsedMilliseconds = 0;
         // Update the status view to show that we're executing
@@ -351,6 +354,15 @@ export default class QueryRunner {
         QueryRunner.addRunningQuery(this._ownerUri);
 
         this._notificationHandler.registerRunner(this, this._ownerUri);
+    }
+
+    /**
+     * Helper method to get the start line from selection data
+     * @param selection The selection data
+     * @returns The start line number or 0 if no selection
+     */
+    private getSelectionStartLine(selection: ISelectionData): number {
+        return selection ? selection.startLine : 0;
     }
 
     // handle the result of the notification
@@ -1347,17 +1359,21 @@ export default class QueryRunner {
     private getSelectionEndColumns(
         rowIdToRowMap: Map<number, DbCellValue[]>,
         rowIdToSelectionMap: Map<number, ISlickRange[]>,
-    ): number[] {
+    ): [number, number] {
+        const INVALID_COLUMN_INDEX = -1;
         let allRowIds = rowIdToRowMap.keys();
-        let firstColumn = -1;
-        let lastColumn = -1;
+        let firstColumn = INVALID_COLUMN_INDEX;
+        let lastColumn = INVALID_COLUMN_INDEX;
         for (let rowId of allRowIds) {
             const rowSelections = rowIdToSelectionMap.get(rowId);
             for (let i = 0; i < rowSelections.length; i++) {
-                if (firstColumn === -1 || rowSelections[i].fromCell < firstColumn) {
+                if (
+                    firstColumn === INVALID_COLUMN_INDEX ||
+                    rowSelections[i].fromCell < firstColumn
+                ) {
                     firstColumn = rowSelections[i].fromCell;
                 }
-                if (lastColumn === -1 || rowSelections[i].toCell > lastColumn) {
+                if (lastColumn === INVALID_COLUMN_INDEX || rowSelections[i].toCell > lastColumn) {
                     lastColumn = rowSelections[i].toCell;
                 }
             }
@@ -1776,7 +1792,8 @@ export default class QueryRunner {
         }
 
         // SQL Server limit: 1000 rows per INSERT VALUES statement
-        const maxRowsPerInsert = 1000;
+        const SQL_SERVER_MAX_ROWS_PER_INSERT = 1000;
+        const maxRowsPerInsert = SQL_SERVER_MAX_ROWS_PER_INSERT;
 
         if (allRowValues.length <= maxRowsPerInsert) {
             // Use single INSERT INTO ... VALUES statement
